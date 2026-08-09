@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # GeneWeaver
 
 GeneWeaver is a project focused on high-throughput genome sequence processing
@@ -45,3 +46,6 @@ NCBI GRCh38.p14 FASTA
   1,000,000-base chunks
         ↓
   Manageable genome data
+=======
+
+>>>>>>> origin/main
