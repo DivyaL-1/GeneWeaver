@@ -1,0 +1,8 @@
+data/*.fna
+data/*.fasta
+data/*.fa
+
+__pycache__/
+*.pyc
+.venv/
+venv/
