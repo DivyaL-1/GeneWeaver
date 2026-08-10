@@ -3,3 +3,4 @@ Week 1:
     CPU Based analysis Metric
     2) Mock genome, and data collection
     3) Forming manageable chunks of the data collected (array chunks).
+
