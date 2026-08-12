@@ -1,0 +1,65 @@
+{
+    "total_chunks": 10,
+    "chunks": [
+        {
+            "chunk_number": 1,
+            "file": "chunk_000001.npy",
+            "length": 1000000,
+            "dtype": "|S1"
+        },
+        {
+            "chunk_number": 2,
+            "file": "chunk_000002.npy",
+            "length": 1000000,
+            "dtype": "|S1"
+        },
+        {
+            "chunk_number": 3,
+            "file": "chunk_000003.npy",
+            "length": 1000000,
+            "dtype": "|S1"
+        },
+        {
+            "chunk_number": 4,
+            "file": "chunk_000004.npy",
+            "length": 1000000,
+            "dtype": "|S1"
+        },
+        {
+            "chunk_number": 5,
+            "file": "chunk_000005.npy",
+            "length": 1000000,
+            "dtype": "|S1"
+        },
+        {
+            "chunk_number": 6,
+            "file": "chunk_000006.npy",
+            "length": 1000000,
+            "dtype": "|S1"
+        },
+        {
+            "chunk_number": 7,
+            "file": "chunk_000007.npy",
+            "length": 1000000,
+            "dtype": "|S1"
+        },
+        {
+            "chunk_number": 8,
+            "file": "chunk_000008.npy",
+            "length": 1000000,
+            "dtype": "|S1"
+        },
+        {
+            "chunk_number": 9,
+            "file": "chunk_000009.npy",
+            "length": 1000000,
+            "dtype": "|S1"
+        },
+        {
+            "chunk_number": 10,
+            "file": "chunk_000010.npy",
+            "length": 1000000,
+            "dtype": "|S1"
+        }
+    ]
+}
