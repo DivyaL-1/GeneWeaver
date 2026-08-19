@@ -8,7 +8,7 @@ import numpy as np
 CHUNK_DIR = "data//chunks"                                          # directory holding the chunk files
 CHUNK_FILENAMES = [f"chunk_{i:06d}.npy" for i in range(1,11)]  # the 10 chunk filenames
 
-SAMPLE_CHUNK_SIZE = 5000  #(None = full length)
+SAMPLE_CHUNK_SIZE = 5000  #(None = full length) Current Max Threshold 37000 chunk length (tested on 16GB memory)
 
 INT_TO_BASE = {0: "A", 1: "C", 2: "G", 3: "T"}
 UNKNOWN_BASE = "N"
