@@ -1,0 +1,39 @@
+Screen {
+    layout: vertical;
+}
+
+#main-panel {
+    width: 100%;
+    height: auto;
+    max-height: 100%;
+    border: solid cyan;
+    padding: 1 2;
+    margin: 0;
+}
+
+.title {
+    content-align: center middle;
+    text-style: bold;
+    margin-bottom: 1;
+}
+
+.section-title {
+    text-style: bold;
+    margin-bottom: 1;
+}
+
+#chunk_progress {
+    margin-bottom: 1;
+}
+
+#status {
+    margin-top: 1;
+}
+
+#current_file {
+    margin-top: 1;
+}
+
+#chunk_count {
+    margin-top: 1;
+}

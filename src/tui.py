@@ -7,6 +7,7 @@ from textual.widgets import Header, Footer, Static, ProgressBar
 
 class GeneWeaverApp(App):
 
+    CSS_PATH = "tui.tcss"
     TITLE = "GeneWeaver - Genome Processing Dashboard"
 
     BINDINGS = [
