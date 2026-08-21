@@ -1,0 +1,51 @@
+Screen {
+    layout: vertical;
+    padding: 1 2;
+}
+
+#main-panel {
+    width: 100%;
+    height: auto;
+    padding: 1 2;
+    border: round;
+}
+
+.title {
+    width: 100%;
+    content-align: center middle;
+    text-style: bold;
+    margin-bottom: 2;
+}
+
+.section-title {
+    width: 100%;
+    text-style: bold;
+    margin-bottom: 1;
+}
+
+#chunk_progress {
+    width: 100%;
+    margin-bottom: 2;
+}
+
+#status {
+    width: 100%;
+    margin-top: 1;
+    margin-bottom: 1;
+    padding: 1;
+    border: round;
+}
+
+#current_file {
+    width: 100%;
+    margin-top: 1;
+    padding: 1;
+    border: round;
+}
+
+#chunk_count {
+    width: 100%;
+    margin-top: 1;
+    padding: 1;
+    border: round;
+}
