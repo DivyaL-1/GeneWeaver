@@ -19,7 +19,40 @@ class GeneWeaverApp(App):
         yield Header()
 
         with Container(id="main-panel"):
+            # GeneWeaver title
             yield Static("🧬 GENEWEAVER", classes="title")
+
+            # Alignment Dashboard
+            yield Static("ALIGNMENT DASHBOARD", classes="section-title")
+            yield Static("Alignment Progress", id="alignment-progress-label")
+            yield Static("Chunk Pair: 0 / 9", id="chunk-pair")
+
+            yield ProgressBar(
+                total=9,
+                show_eta=False,
+                id="alignment_progress",
+            )
+
+            # GPU Status
+            yield Static("GPU STATUS", classes="section-title")
+            yield Static("GPU: Not Connected", id="gpu-status")
+            yield Static("GPU Memory: --", id="gpu-memory")
+            yield Static("GPU Utilization: --", id="gpu-utilization")
+            yield Static("CUDA Status: Not Available", id="cuda-status")
+
+            # Results
+            yield Static("RESULTS", classes="section-title")
+
+            yield Static("CPU Baseline", id="cpu-result-title")
+            yield Static("Average Time: --", id="cpu-average-time")
+            yield Static("Throughput: --", id="cpu-throughput")
+
+            yield Static("GPU Result", id="gpu-result-title")
+            yield Static("Average Time: --", id="gpu-average-time")
+            yield Static("Throughput: --", id="gpu-throughput")
+            yield Static("Speedup: --", id="gpu-speedup")
+
+            # Existing genome chunking section
             yield Static("Genome Chunking Progress", classes="section-title")
 
             yield ProgressBar(
