@@ -8,6 +8,7 @@ from textual.widgets import Header, Footer, Static, ProgressBar
 class GeneWeaverApp(App):
 
     CSS_PATH = "tui.tcss"
+
     TITLE = "GeneWeaver - Genome Processing Dashboard"
 
     BINDINGS = [
@@ -17,14 +18,14 @@ class GeneWeaverApp(App):
     def compose(self) -> ComposeResult:
         yield Header()
 
-        with Container():
-            yield Static("🧬 GeneWeaver", classes="title")
-            yield Static("Genome Chunking Progress")
+        with Container(id="main-panel"):
+            yield Static("🧬 GENEWEAVER", classes="title")
+            yield Static("Genome Chunking Progress", classes="section-title")
 
             yield ProgressBar(
                 total=10,
                 show_eta=False,
-                id="chunk_progress"
+                id="chunk_progress",
             )
 
             yield Static("Status: Ready", id="status")
@@ -47,13 +48,22 @@ class GeneWeaverApp(App):
             return
 
         self.query_one("#status", Static).update(
+            "Status: Loading genome..."
+        )
+
+        # Show loading status briefly before processing.
+        self.set_timer(2, self.start_processing)
+
+    def start_processing(self) -> None:
+        """Begin processing the genome chunks."""
+        self.query_one("#status", Static).update(
             "Status: Processing genome chunks..."
         )
 
         self.set_interval(1, self.process_next_chunk)
 
     def process_next_chunk(self) -> None:
-        """Update the UI for the next genome chunk."""
+        """Update progress for the next genome chunk."""
 
         if self.current_chunk >= len(self.chunk_files):
             self.query_one("#status", Static).update(
@@ -62,13 +72,14 @@ class GeneWeaverApp(App):
             self.query_one("#current_file", Static).update(
                 "Current file: All chunks processed"
             )
-            self.query_one("#chunk_count", Static).update(
-                f"Chunks: {len(self.chunk_files)} / {len(self.chunk_files)}"
-            )
             return
 
         chunk_file = self.chunk_files[self.current_chunk]
         index = self.current_chunk + 1
+
+        self.query_one("#status", Static).update(
+            f"Status: Processing chunk {index}/{len(self.chunk_files)}"
+        )
 
         self.query_one("#current_file", Static).update(
             f"Current file: {chunk_file.name}"
