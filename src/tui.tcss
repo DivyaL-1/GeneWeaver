@@ -12,17 +12,88 @@ Screen {
 }
 
 .title {
+    width: 100%;
     content-align: center middle;
     text-style: bold;
-    margin-bottom: 1;
+    margin-bottom: 2;
 }
 
 .section-title {
+    width: 100%;
     text-style: bold;
+    margin-top: 1;
+    margin-bottom: 1;
+    border-bottom: solid cyan;
+    padding-bottom: 1;
+}
+
+/* Alignment Dashboard */
+#alignment-progress-label {
     margin-bottom: 1;
 }
 
+#chunk-pair {
+    margin-bottom: 1;
+}
+
+#alignment_progress {
+    width: 100%;
+    margin-bottom: 1;
+}
+
+/* GPU Status */
+#gpu-status {
+    margin-top: 1;
+}
+
+#gpu-memory {
+    margin-top: 1;
+}
+
+#gpu-utilization {
+    margin-top: 1;
+}
+
+#cuda-status {
+    margin-top: 1;
+    margin-bottom: 1;
+}
+
+/* Results */
+#cpu-result-title {
+    text-style: bold;
+    margin-top: 1;
+}
+
+#cpu-average-time {
+    margin-top: 1;
+}
+
+#cpu-throughput {
+    margin-top: 1;
+}
+
+#gpu-result-title {
+    text-style: bold;
+    margin-top: 2;
+}
+
+#gpu-average-time {
+    margin-top: 1;
+}
+
+#gpu-throughput {
+    margin-top: 1;
+}
+
+#gpu-speedup {
+    margin-top: 1;
+    margin-bottom: 1;
+}
+
+/* Existing Genome Chunking */
 #chunk_progress {
+    width: 100%;
     margin-bottom: 1;
 }
 
