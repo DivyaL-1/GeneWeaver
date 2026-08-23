@@ -8,9 +8,11 @@ if not hasattr(np, "row_stack"):
 import os
 import time
 from pathlib import Path
+import sys
 
 from textual import work
 from textual.app import App, ComposeResult
+from textual import work
 from textual.containers import Container
 from textual.widgets import Header, Footer, Static, ProgressBar
 from textual.worker import get_current_worker
@@ -23,6 +25,13 @@ CHUNK_FILENAMES = [f"chunk_{i:06d}.npy" for i in range(1, 11)]
 
 SAMPLE_SIZE = 10000
 
+
+# Add project root to Python import path
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(PROJECT_ROOT))
+
+from GPUalgorithm import align_all_chunks_gpu
+from numba import cuda
 
 
 class GeneWeaverApp(App):
@@ -39,13 +48,24 @@ class GeneWeaverApp(App):
         yield Header()
 
         with Container(id="main-panel"):
-            # GeneWeaver title
+
             yield Static("🧬 GENEWEAVER", classes="title")
 
             # Alignment Dashboard
-            yield Static("ALIGNMENT DASHBOARD", classes="section-title")
-            yield Static("Alignment Progress", id="alignment-progress-label")
-            yield Static("Chunk Pair: 0 / 9", id="chunk-pair")
+            yield Static(
+                "ALIGNMENT DASHBOARD",
+                classes="section-title"
+            )
+
+            yield Static(
+                "Alignment Progress",
+                id="alignment-progress-label"
+            )
+
+            yield Static(
+                "Chunk Pair: 0 / 9",
+                id="chunk-pair"
+            )
 
             yield ProgressBar(
                 total=9,
@@ -54,26 +74,77 @@ class GeneWeaverApp(App):
             )
 
             # GPU Status
-            yield Static("GPU STATUS", classes="section-title")
-            yield Static("GPU: Not Connected", id="gpu-status")
-            yield Static("GPU Memory: --", id="gpu-memory")
-            yield Static("GPU Utilization: --", id="gpu-utilization")
-            yield Static("CUDA Status: Not Available", id="cuda-status")
+            yield Static(
+                "GPU STATUS",
+                classes="section-title"
+            )
+
+            yield Static(
+                "GPU: Checking...",
+                id="gpu-status"
+            )
+
+            yield Static(
+                "GPU Memory: --",
+                id="gpu-memory"
+            )
+
+            yield Static(
+                "GPU Utilization: --",
+                id="gpu-utilization"
+            )
+
+            yield Static(
+                "CUDA Status: Checking...",
+                id="cuda-status"
+            )
 
             # Results
-            yield Static("RESULTS", classes="section-title")
+            yield Static(
+                "RESULTS",
+                classes="section-title"
+            )
 
-            yield Static("CPU Baseline", id="cpu-result-title")
-            yield Static("Average Time: --", id="cpu-average-time")
-            yield Static("Throughput: --", id="cpu-throughput")
+            yield Static(
+                "CPU Baseline",
+                id="cpu-result-title"
+            )
 
-            yield Static("GPU Result", id="gpu-result-title")
-            yield Static("Average Time: --", id="gpu-average-time")
-            yield Static("Throughput: --", id="gpu-throughput")
-            yield Static("Speedup: --", id="gpu-speedup")
+            yield Static(
+                "Average Time: --",
+                id="cpu-average-time"
+            )
 
-            # Existing genome chunking section
-            yield Static("Genome Chunking Progress", classes="section-title")
+            yield Static(
+                "Throughput: --",
+                id="cpu-throughput"
+            )
+
+            yield Static(
+                "GPU Result",
+                id="gpu-result-title"
+            )
+
+            yield Static(
+                "Average Time: --",
+                id="gpu-average-time"
+            )
+
+            yield Static(
+                "Throughput: --",
+                id="gpu-throughput"
+            )
+
+            yield Static(
+                "Speedup: --",
+                id="gpu-speedup"
+            )
+
+            # Genome Chunking
+            yield Static(
+                "Genome Chunking Progress",
+                classes="section-title"
+            )
 
             yield ProgressBar(
                 total=10,
@@ -81,9 +152,20 @@ class GeneWeaverApp(App):
                 id="chunk_progress",
             )
 
-            yield Static("Status: Ready", id="status")
-            yield Static("Current file: None", id="current_file")
-            yield Static("Chunks: 0 / 10", id="chunk_count")
+            yield Static(
+                "Status: Ready",
+                id="status"
+            )
+
+            yield Static(
+                "Current file: None",
+                id="current_file"
+            )
+
+            yield Static(
+                "Chunks: 0 / 10",
+                id="chunk_count"
+            )
 
         yield Footer()
 
@@ -101,6 +183,7 @@ class GeneWeaverApp(App):
                 f"Status: Missing {len(missing)}/{len(candidate_paths)} chunk file(s) "
                 f"in '{CHUNK_DIR}': {shown}{more}"
             )
+
             return
 
         self.chunk_files = candidate_paths
