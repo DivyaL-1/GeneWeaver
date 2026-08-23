@@ -1,8 +1,28 @@
+import numpy as np
+
+if not hasattr(np, "row_stack"):
+    np.row_stack = np.vstack
+
+
+
+import os
+import time
 from pathlib import Path
 
+from textual import work
 from textual.app import App, ComposeResult
 from textual.containers import Container
 from textual.widgets import Header, Footer, Static, ProgressBar
+from textual.worker import get_current_worker
+
+import GPUalgorithm as cuda_alignment
+import firstAlgorithm as align_all_chunks
+
+CHUNK_DIR = "data/chunks"
+CHUNK_FILENAMES = [f"chunk_{i:06d}.npy" for i in range(1, 11)]
+
+SAMPLE_SIZE = 10000
+
 
 
 class GeneWeaverApp(App):
@@ -68,63 +88,143 @@ class GeneWeaverApp(App):
         yield Footer()
 
     def on_mount(self) -> None:
-        self.chunk_files = sorted(Path("data/chunks").glob("chunk_*.npy"))
-        self.current_chunk = 0
+        candidate_paths = [Path(CHUNK_DIR) / fname for fname in CHUNK_FILENAMES]
+        missing = [p for p in candidate_paths if not p.exists()]
 
         progress_bar = self.query_one("#chunk_progress", ProgressBar)
-        progress_bar.update(total=len(self.chunk_files))
+        progress_bar.update(total=len(candidate_paths))
 
-        if not self.chunk_files:
+        if missing:
+            shown = ", ".join(p.name for p in missing[:3])
+            more = f" (+{len(missing) - 3} more)" if len(missing) > 3 else ""
             self.query_one("#status", Static).update(
-                "Status: No chunk files found"
+                f"Status: Missing {len(missing)}/{len(candidate_paths)} chunk file(s) "
+                f"in '{CHUNK_DIR}': {shown}{more}"
             )
             return
 
-        self.query_one("#status", Static).update(
-            "Status: Loading genome..."
-        )
+        self.chunk_files = candidate_paths
+        self.query_one("#status", Static).update("Status: Loading genome...")
+        self.run_pipeline_worker()
 
-        # Show loading status briefly before processing.
-        self.set_timer(2, self.start_processing)
+    def _set_status(self, text: str) -> None:
+        self.query_one("#status", Static).update(f"Status: {text}")
 
-    def start_processing(self) -> None:
-        """Begin processing the genome chunks."""
-        self.query_one("#status", Static).update(
-            "Status: Processing genome chunks..."
-        )
+    def _set_current_file(self, text: str) -> None:
+        self.query_one("#current_file", Static).update(f"Current file: {text}")
 
-        self.set_interval(1, self.process_next_chunk)
+    def _set_chunk_progress(self, done: int, total: int) -> None:
+        self.query_one("#chunk_progress", ProgressBar).update(progress=done)
+        self.query_one("#chunk_count", Static).update(f"Chunks: {done} / {total}")
 
-    def process_next_chunk(self) -> None:
-        """Update progress for the next genome chunk."""
+    def _set_alignment_label(self, text: str) -> None:
+        self.query_one("#alignment-progress-label", Static).update(text)
 
-        if self.current_chunk >= len(self.chunk_files):
-            self.query_one("#status", Static).update(
-                "Status: Chunk processing complete"
+    def _set_alignment_progress(self, done: int, total: int) -> None:
+        self.query_one("#alignment_progress", ProgressBar).update(total=total, progress=done)
+        self.query_one("#chunk-pair", Static).update(f"Chunk Pair: {done} / {total}")
+
+    def _set_gpu_status_widgets(self, info: dict) -> None:
+        if info["simulator"]:
+            self.query_one("#gpu-status", Static).update("GPU: Simulator (no hardware detected)")
+            self.query_one("#cuda-status", Static).update("CUDA Status: Simulator mode")
+        elif info["available"]:
+            name = info["device_name"] or "GPU"
+            self.query_one("#gpu-status", Static).update(f"GPU: Connected ({name})")
+            self.query_one("#cuda-status", Static).update("CUDA Status: Available")
+        else:
+            self.query_one("#gpu-status", Static).update("GPU: Not Connected")
+            self.query_one("#cuda-status", Static).update("CUDA Status: Not Available")
+
+        if info["memory_free_gb"] is not None:
+            self.query_one("#gpu-memory", Static).update(
+                f"GPU Memory: {info['memory_free_gb']:.2f} / {info['memory_total_gb']:.2f} GB free"
             )
-            self.query_one("#current_file", Static).update(
-                "Current file: All chunks processed"
+        else:
+            self.query_one("#gpu-memory", Static).update("GPU Memory: N/A")
+
+        if info["utilization_pct"] is not None:
+            self.query_one("#gpu-utilization", Static).update(
+                f"GPU Utilization: {info['utilization_pct']:.0f}%"
             )
+        else:
+            self.query_one("#gpu-utilization", Static).update("GPU Utilization: N/A")
+
+    def _set_cpu_results(self, avg_time_s: float, avg_throughput: float) -> None:
+        self.query_one("#cpu-average-time", Static).update(f"Average Time: {avg_time_s*1000:.2f} ms")
+        self.query_one("#cpu-throughput", Static).update(f"Throughput: {avg_throughput:,.0f} cells/sec")
+
+    def _set_gpu_results(self, avg_time_s: float, avg_throughput: float, speedup: float) -> None:
+        self.query_one("#gpu-average-time", Static).update(f"Average Time: {avg_time_s*1000:.2f} ms")
+        self.query_one("#gpu-throughput", Static).update(f"Throughput: {avg_throughput:,.0f} cells/sec")
+        self.query_one("#gpu-speedup", Static).update(f"Speedup: {speedup:.1f}x")
+
+    @work(thread=True)
+    def run_pipeline_worker(self) -> None:
+        worker = get_current_worker()
+
+        # ---- GPU status, shown immediately regardless of pipeline stage ----
+        gpu_info = cuda_alignment.gpu_status_info()
+        self.call_from_thread(self._set_gpu_status_widgets, gpu_info)
+
+        # ---- Stage 1: load & decode all chunks ----
+        self.call_from_thread(self._set_status, "Loading genome...")
+        sequences = []
+        for idx, path in enumerate(self.chunk_files, start=1):
+            if worker.is_cancelled:
+                return
+            seq = cuda_alignment.load_chunk_as_sequence(str(path), SAMPLE_SIZE)
+            sequences.append(seq)
+
+            self.call_from_thread(self._set_current_file, path.name)
+            self.call_from_thread(self._set_chunk_progress, idx, len(self.chunk_files))
+            self.call_from_thread(
+                self._set_status, f"Processing chunk {idx}/{len(self.chunk_files)}"
+            )
+
+        if worker.is_cancelled:
             return
 
-        chunk_file = self.chunk_files[self.current_chunk]
-        index = self.current_chunk + 1
+        
+        self.call_from_thread(self._set_status, "Running CPU baseline...")
+        self.call_from_thread(self._set_alignment_label, "CPU Alignment Progress")
+        self.call_from_thread(self._set_alignment_progress, 0, len(sequences) - 1)
 
-        self.query_one("#status", Static).update(
-            f"Status: Processing chunk {index}/{len(self.chunk_files)}"
+        def cpu_progress_cb(pair_index, n_pairs):
+            self.call_from_thread(self._set_alignment_progress, pair_index + 1, n_pairs)
+
+        cpu_results = align_all_chunks.align_sequence_pairs_cpu(
+            sequences, progress_callback=cpu_progress_cb
         )
+        cpu_avg_time = sum(r["elapsed_s"] for r in cpu_results) / len(cpu_results)
+        cpu_avg_throughput = sum(r["cells_per_sec"] for r in cpu_results) / len(cpu_results)
+        self.call_from_thread(self._set_cpu_results, cpu_avg_time, cpu_avg_throughput)
 
-        self.query_one("#current_file", Static).update(
-            f"Current file: {chunk_file.name}"
+        if worker.is_cancelled:
+            return
+
+        # ---- Stage 3: GPU benchmark, consecutive pairs ----
+        self.call_from_thread(self._set_status, "Running GPU benchmark...")
+        self.call_from_thread(self._set_alignment_label, "GPU Alignment Progress")
+        self.call_from_thread(self._set_alignment_progress, 0, len(sequences) - 1)
+
+
+        def gpu_progress_cb(pair_index, n_pairs, done_diag, total_diag):
+            if done_diag == total_diag:
+                self.call_from_thread(self._set_alignment_progress, pair_index + 1, n_pairs)
+
+        gpu_results = cuda_alignment.align_sequence_pairs_gpu(
+            sequences, progress_callback=gpu_progress_cb
         )
+        gpu_avg_time = sum(r["timings"]["total_s"] for r in gpu_results) / len(gpu_results)
+        gpu_avg_throughput = sum(
+            (r["n"] * r["m"]) / r["timings"]["total_s"] for r in gpu_results
+        ) / len(gpu_results)
+        speedup = cpu_avg_time / gpu_avg_time if gpu_avg_time > 0 else float("inf")
+        self.call_from_thread(self._set_gpu_results, gpu_avg_time, gpu_avg_throughput, speedup)
 
-        self.query_one("#chunk_count", Static).update(
-            f"Chunks: {index} / {len(self.chunk_files)}"
-        )
-
-        self.query_one("#chunk_progress", ProgressBar).advance(1)
-
-        self.current_chunk += 1
+        self.call_from_thread(self._set_status, "Benchmark complete")
+        self.call_from_thread(self._set_current_file, "All chunks processed")
 
 
 if __name__ == "__main__":

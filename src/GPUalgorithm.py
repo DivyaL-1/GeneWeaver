@@ -14,21 +14,22 @@ UNKNOWN_CODE = 4
 
 
 def encode_sequence(seq_str):
-    """ACGTN string -> int8 numpy array of codes (A=0,C=1,G=2,T=3,N=4)."""
     return np.array(
         [BASE_TO_CODE.get(ch, UNKNOWN_CODE) for ch in seq_str], dtype=np.int8
     )
 
 
+# ----------------------------------------------------------------------
+# CUDA kernel: computes one anti-diagonal of the DP matrix
+# ----------------------------------------------------------------------
 @cuda.jit
 def nw_diagonal_kernel(seq1_d, seq2_d, dp_d, n, m, d, i_lo, i_hi, match, mismatch, gap):
     tid = cuda.grid(1)
     i = i_lo + tid
     if i > i_hi:
-        return  
-
+        return
+    
     j = d - i
-    # Row 0 / column 0 are boundary values already written during init — nothing to compute for them.
     if i == 0 or j == 0:
         return
 
@@ -48,14 +49,15 @@ def nw_diagonal_kernel(seq1_d, seq2_d, dp_d, n, m, d, i_lo, i_hi, match, mismatc
     dp_d[i * row_stride + j] = best
 
 
-def needleman_wunsch_cuda(seq1_str, seq2_str,match=1, mismatch=-1, gap=-2,threads_per_block=128,progress_callback=None,):
+def needleman_wunsch_cuda(seq1_str, seq2_str,match=1, mismatch=-1, gap=-2,threads_per_block=32,progress_callback=None,):
     n, m = len(seq1_str), len(seq2_str)
     row_stride = m + 1
 
     seq1_codes = encode_sequence(seq1_str)
     seq2_codes = encode_sequence(seq2_str)
 
-
+    # DP matrix boundary init happens on host (O(n+m), trivial cost)
+    # then the whole matrix is transferred once.
     dp_init = np.zeros((n + 1) * (m + 1), dtype=np.int32)
     for i in range(n + 1):
         dp_init[i * row_stride] = i * gap
@@ -64,7 +66,7 @@ def needleman_wunsch_cuda(seq1_str, seq2_str,match=1, mismatch=-1, gap=-2,thread
 
     timings = {}
 
-
+    # ---- Host -> Device transfer ----
     t0 = time.perf_counter()
     seq1_d = cuda.to_device(seq1_codes)
     seq2_d = cuda.to_device(seq2_codes)
@@ -72,7 +74,8 @@ def needleman_wunsch_cuda(seq1_str, seq2_str,match=1, mismatch=-1, gap=-2,thread
     cuda.synchronize()
     timings["host_to_device_s"] = time.perf_counter() - t0
 
-    total_diagonals = n + m - 1 
+
+    total_diagonals = n + m - 1  # diagonals d = 2 .. n+m, count = n+m-1
     update_every = max(1, total_diagonals // 100)  # ~100 progress updates max
 
     t1 = time.perf_counter()
@@ -89,7 +92,7 @@ def needleman_wunsch_cuda(seq1_str, seq2_str,match=1, mismatch=-1, gap=-2,thread
         )
 
         if progress_callback is not None and (step % update_every == 0 or step == total_diagonals):
-            cuda.synchronize()  
+            cuda.synchronize()  # only sync when we actually need to report progress
             progress_callback(step, total_diagonals)
 
     cuda.synchronize()
@@ -104,11 +107,12 @@ def needleman_wunsch_cuda(seq1_str, seq2_str,match=1, mismatch=-1, gap=-2,thread
 
     return {"score": score, "n": n, "m": m, "timings": timings}
 
-#Directory here
-CHUNK_DIR = "data//chunks"                                         
-CHUNK_FILENAMES = [f"chunk_{i:06d}.npy" for i in range(1,11)]  
 
 
+# >>> SET THESE TWO VARIABLES TO YOUR CHUNK FILE LOCATION <<<
+CHUNK_DIR = "chunks_1m"
+CHUNK_FILENAMES = [f"genome_chunk_{i:02d}.npy" for i in range(10)]
+# ----------------------------------------------------------------------
 
 SAMPLE_SIZE = 5000
 
@@ -136,14 +140,16 @@ def load_chunk_as_sequence(path, limit=None):
     return seq.upper()
 
 
-def align_all_chunks_gpu(chunk_dir, chunk_filenames, sample_size=None, progress_callback=None):
-    import os as _os
-    paths = [_os.path.join(chunk_dir, f) for f in chunk_filenames]
+def align_sequence_pairs_gpu(sequences, progress_callback=None):
+    """
+    Run GPU alignment on each consecutive pair of *already-loaded*
+    sequences. Split out from align_all_chunks_gpu so a caller (e.g. a
+    TUI) can own the loading step itself — for per-chunk load progress —
+    and then hand off just the alignment stage here.
 
-    sequences = []
-    for path in paths:
-        sequences.append(load_chunk_as_sequence(path, sample_size))
-
+    progress_callback(pair_index, n_pairs, done_diag, total_diag) if given.
+    Returns a list of per-pair result dicts (see needleman_wunsch_cuda).
+    """
     pair_results = []
     n_pairs = len(sequences) - 1
     for i in range(n_pairs):
@@ -161,10 +167,58 @@ def align_all_chunks_gpu(chunk_dir, chunk_filenames, sample_size=None, progress_
     return pair_results
 
 
+def align_all_chunks_gpu(chunk_dir, chunk_filenames, sample_size=None, progress_callback=None):
+    import os as _os
+    paths = [_os.path.join(chunk_dir, f) for f in chunk_filenames]
+    sequences = [load_chunk_as_sequence(p, sample_size) for p in paths]
+    return align_sequence_pairs_gpu(sequences, progress_callback)
+
+
+def gpu_status_info():
+    info = {
+        "available": cuda.is_available(),
+        "simulator": os.environ.get("NUMBA_ENABLE_CUDASIM") == "1",
+        "device_name": None,
+        "memory_free_gb": None,
+        "memory_total_gb": None,
+        "utilization_pct": None,
+    }
+
+    try:
+        if info["available"]:
+            dev = cuda.get_current_device()
+            name = dev.name
+            info["device_name"] = name.decode() if isinstance(name, bytes) else str(name)
+    except Exception:
+        pass
+
+    try:
+        free_b, total_b = cuda.current_context().get_memory_info()
+        # The CUDA simulator reports inf/inf (no real VRAM concept) —
+        # only treat this as real memory info on actual hardware.
+        if math.isfinite(free_b) and math.isfinite(total_b):
+            info["memory_free_gb"] = free_b / 1e9
+            info["memory_total_gb"] = total_b / 1e9
+    except Exception:
+        pass
+
+    try:
+        import subprocess
+        out = subprocess.run(
+            ["nvidia-smi", "--query-gpu=utilization.gpu", "--format=csv,noheader,nounits"],
+            capture_output=True, text=True, timeout=2,
+        )
+        if out.returncode == 0 and out.stdout.strip():
+            info["utilization_pct"] = float(out.stdout.strip().splitlines()[0])
+    except Exception:
+        pass
+
+    return info
+
+
 if __name__ == "__main__":
     print(f"CUDA available (real GPU): {cuda.is_available()}")
     print(f"CUDA simulator active    : {os.environ.get('NUMBA_ENABLE_CUDASIM') == '1'}\n")
-
     print(f"Loading chunks from '{CHUNK_DIR}' "
           + (f"(sampling first {SAMPLE_SIZE:,} bp of each)" if SAMPLE_SIZE else "(full length)"))
 
