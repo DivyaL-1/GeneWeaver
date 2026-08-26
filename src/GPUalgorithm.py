@@ -110,8 +110,8 @@ def needleman_wunsch_cuda(seq1_str, seq2_str,match=1, mismatch=-1, gap=-2,thread
 
 
 # >>> SET THESE TWO VARIABLES TO YOUR CHUNK FILE LOCATION <<<
-CHUNK_DIR = "chunks_1m"
-CHUNK_FILENAMES = [f"genome_chunk_{i:02d}.npy" for i in range(10)]
+CHUNK_DIR = "data/chunks"
+CHUNK_FILENAMES = [f"chunk_{i:06d}.npy" for i in range(1,10)]
 # ----------------------------------------------------------------------
 
 SAMPLE_SIZE = 5000
