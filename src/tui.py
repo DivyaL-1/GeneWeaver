@@ -20,7 +20,7 @@ from textual.worker import get_current_worker
 import GPUalgorithm as cuda_alignment
 import firstAlgorithm as align_all_chunks
 
-CHUNK_DIR = "../data/chunks"
+CHUNK_DIR = "data/chunks"
 CHUNK_FILENAMES = [f"chunk_{i:06d}.npy" for i in range(1, 11)]
 
 SAMPLE_SIZE = 10000
