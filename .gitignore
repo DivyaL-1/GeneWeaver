@@ -1,7 +1,9 @@
 data/*.fna
 data/*.fasta
 data/*.fa
-
+test/data1/*.fna
+test/data1/*.fasta
+test/data1/*.fa
 
 __pycache__/
 *.pyc
