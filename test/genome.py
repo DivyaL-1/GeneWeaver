@@ -6,7 +6,7 @@ genome_file = "test/data1/GCF_000001405.40_GRCh38.p14_genomic.fna"
 chunks_folder = "test/data1/chunks"
 
 CHUNK_SIZE = 50_000
-MAX_CHUNKS = 10
+MAX_CHUNKS = 20
 
 os.makedirs(chunks_folder, exist_ok=True)
 total_records = 0
