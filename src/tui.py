@@ -1,3 +1,8 @@
+import numpy as np
+
+if not hasattr(np, "row_stack"):
+    np.row_stack = np.vstack
+
 import os
 import time
 from pathlib import Path
