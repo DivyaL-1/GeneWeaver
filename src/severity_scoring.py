@@ -1,3 +1,121 @@
+import math
+
+
+BASES = "ACGT"
+
+TRANSITIONS = {
+    ("A", "G"),
+    ("G", "A"),
+    ("C", "T"),
+    ("T", "C"),
+}
+
+TRANSITION_PENALTY = 0.6
+TRANSVERSION_PENALTY = 1.0
+UNKNOWN_BASE_PENALTY = 0.8
+
+SEED_DECAY = 6.0
+
+PAM_CLASS_WEIGHT = {
+    "NGG": 1.00,
+    "NAG": 0.25,
+    "NGA": 0.10,
+}
+
+NON_CANONICAL_PAM_WEIGHT = 0.02
+
+
+def substitution_penalty(guide_base, site_base):
+    if guide_base == site_base:
+        return 0.0
+
+    if guide_base not in BASES or site_base not in BASES:
+        return UNKNOWN_BASE_PENALTY
+
+    if (guide_base, site_base) in TRANSITIONS:
+        return TRANSITION_PENALTY
+
+    return TRANSVERSION_PENALTY
+
+
+def position_weight(index, guide_length, decay=SEED_DECAY):
+    distance_to_pam = guide_length - 1 - index
+    return math.exp(-distance_to_pam / decay)
+
+
+def pam_class(pam):
+    if not pam or len(pam) < 3:
+        return None
+
+    key = "N" + pam[1:3].upper()
+
+    return key if key in PAM_CLASS_WEIGHT else None
+
+
+def pam_score(pam, mismatches, guide_length, decay=SEED_DECAY):
+    weight = PAM_CLASS_WEIGHT.get(
+        pam_class(pam),
+        NON_CANONICAL_PAM_WEIGHT
+    )
+
+    if guide_length <= 0:
+        return weight
+
+    disruption = 0.0
+
+    for mm in mismatches:
+        disruption += (
+            position_weight(
+                mm["index"],
+                guide_length,
+                decay
+            )
+            * substitution_penalty(
+                mm["guide_base"],
+                mm["site_base"]
+            )
+        )
+
+    worst = sum(
+        position_weight(i, guide_length, decay)
+        for i in range(guide_length)
+    )
+
+    activity = (
+        1.0 - min(1.0, disruption / worst)
+        if worst > 0
+        else 1.0
+    )
+
+    return weight * activity
+
+
+def normalize_alignment_score(
+    raw_score,
+    n,
+    m,
+    match=1,
+    mismatch=-1,
+    gap=-2
+):
+    shorter = min(n, m)
+    delta = abs(n - m)
+
+    best = match * shorter + gap * delta
+    worst = mismatch * shorter + gap * delta
+
+    if best == worst:
+        return 1.0
+
+    return max(
+        0.0,
+        min(
+            1.0,
+            (raw_score - worst) / (best - worst)
+        )
+    )
+
+
 def calculate_severity(
     alignment_score,
     mismatch_count,
@@ -20,7 +138,6 @@ def calculate_severity(
         Final severity score between 0 and 1.
     """
 
-    # Validate scores
     alignment_score = max(
         0.0,
         min(1.0, float(alignment_score))
@@ -36,17 +153,10 @@ def calculate_severity(
         int(mismatch_count)
     )
 
-    # Convert mismatch count into a score.
-    #
-    # 0 mismatches -> 1.0
-    # 1 mismatch   -> 0.5
-    # 2 mismatches -> 0.333
-    # 3 mismatches -> 0.25
     mismatch_score = 1 / (
         1 + mismatch_count
     )
 
-    # Biological scoring weights
     alignment_weight = 0.5
     mismatch_weight = 0.2
     pam_weight = 0.3
@@ -84,9 +194,6 @@ def add_severity_to_result(
 ):
     """
     Add severity information to an off-target result.
-
-    This connects the alignment information
-    with the PAM score.
     """
 
     severity_score = calculate_severity(
@@ -114,50 +221,44 @@ def rank_off_targets(results):
 
     return sorted(
         results,
-        key=lambda result: result["severity_score"],
-        reverse=True
+        key=lambda result: (
+            -result["severity_score"],
+            result.get("mismatch_count", 0),
+            result.get("chunk", ""),
+            result.get("start", 0),
+        ),
     )
 
 
-if __name__ == "__main__":
+def score_site(site, decay=SEED_DECAY):
+    guide_length = len(site["guide"])
 
-    # Example result
-    alignment_score = 0.90
-    mismatch_count = 1
-    pam_score = 0.94
-
-    severity_score = calculate_severity(
-        alignment_score,
-        mismatch_count,
-        pam_score
+    site["pam_class"] = (
+        pam_class(site["pam"])
+        or "non-canonical"
     )
 
-    severity = classify_severity(
-        severity_score
+    site["pam_score"] = pam_score(
+        site["pam"],
+        site["mismatches"],
+        guide_length,
+        decay
     )
 
-    print()
-    print("OFF-TARGET SEVERITY")
-    print("-" * 40)
-
-    print(
-        f"Alignment Score : {alignment_score}"
+    site["alignment_score"] = normalize_alignment_score(
+        site["raw_alignment_score"],
+        guide_length,
+        guide_length
     )
 
-    print(
-        f"Mismatch Count  : {mismatch_count}"
+    site["severity_score"] = calculate_severity(
+        site["alignment_score"],
+        site["mismatch_count"],
+        site["pam_score"]
     )
 
-    print(
-        f"PAM Score       : {pam_score}"
+    site["severity"] = classify_severity(
+        site["severity_score"]
     )
 
-    print(
-        f"Severity Score  : {severity_score}"
-    )
-
-    print(
-        f"Severity        : {severity}"
-    )
-
-    print()
+    return site
