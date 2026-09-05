@@ -1,14 +1,23 @@
 import numpy as np
+from pathlib import Path
 
 
 def find_pam_sites(sequence, offset=0):
     """
-    Find SpCas9 PAM sequences with the NGG pattern.
+    Find SpCas9 PAM sequences using the NGG pattern.
 
-    Valid examples:
-    AGG, CGG, GGG, TGG
+    Valid PAM examples:
+        AGG
+        CGG
+        GGG
+        TGG
 
-    offset converts sample positions into actual chunk positions.
+    Parameters:
+        sequence: DNA sequence string
+        offset: starting position of the sequence in the original chunk
+
+    Returns:
+        List of PAM sites with their positions.
     """
 
     sequence = sequence.upper()
@@ -32,15 +41,22 @@ def calculate_pam_proximity_score(
     max_distance=50
 ):
     """
-    Calculate PAM proximity score.
+    Calculate a PAM-proximity score.
 
-    Parameters:
-        pam_sites: PAM sites with actual chunk positions
-        candidate_position: off-target/candidate position
-        max_distance: maximum distance considered for scoring
+    A PAM closer to the candidate position receives a higher score.
+
+    Score:
+        100 = PAM is at candidate position
+        0   = PAM is 50 or more bases away
 
     Returns:
-        Dictionary containing PAM score and normalized score.
+        Dictionary containing:
+        - score
+        - score_normalized
+        - nearest_pam
+        - pam_position
+        - distance
+        - risk
     """
 
     if not pam_sites:
@@ -53,6 +69,7 @@ def calculate_pam_proximity_score(
             "risk": "Low"
         }
 
+    # Find the closest PAM to the candidate
     nearest_site = min(
         pam_sites,
         key=lambda site: abs(
@@ -64,6 +81,7 @@ def calculate_pam_proximity_score(
         nearest_site["position"] - candidate_position
     )
 
+    # Calculate proximity score
     if distance <= max_distance:
         score = (
             (max_distance - distance) / max_distance
@@ -74,6 +92,7 @@ def calculate_pam_proximity_score(
     score = round(score, 2)
     score_normalized = round(score / 100, 4)
 
+    # PAM-specific risk classification
     if score >= 70:
         risk = "High"
     elif score >= 40:
@@ -92,7 +111,9 @@ def calculate_pam_proximity_score(
 
 
 def load_chunk_as_sequence(path):
-    """Load a DNA sequence from a .npy chunk file."""
+    """
+    Load a DNA sequence from a .npy genome chunk.
+    """
 
     arr = np.load(path, allow_pickle=True)
 
@@ -105,15 +126,38 @@ def load_chunk_as_sequence(path):
 
     return sequence.upper()
 
-from pathlib import Path
 
-
-def analyze_all_chunks(chunk_directory, sample_length=5000):
+def get_first_valid_position(sequence):
     """
-    Find NGG PAM sites in all genome chunk files.
+    Find the first valid DNA base (A/C/G/T).
 
-    Returns a dictionary where each chunk name maps to
-    its PAM analysis results.
+    Returns:
+        Position of the first valid DNA base,
+        or None if no valid base exists.
+    """
+
+    return next(
+        (
+            i
+            for i, base in enumerate(sequence)
+            if base in "ACGT"
+        ),
+        None
+    )
+
+
+def analyze_all_chunks(
+    chunk_directory,
+    sample_length=5000
+):
+    """
+    Find NGG PAM sites in all genome chunks.
+
+    Only the first sample_length valid bases
+    are analyzed from each chunk.
+
+    Returns:
+        Dictionary containing PAM analysis for each chunk.
     """
 
     chunk_directory = Path(chunk_directory)
@@ -125,17 +169,10 @@ def analyze_all_chunks(chunk_directory, sample_length=5000):
     all_results = {}
 
     for chunk_path in chunk_files:
+
         sequence = load_chunk_as_sequence(chunk_path)
 
-        # Find the first valid DNA base
-        start_position = next(
-            (
-                i
-                for i, base in enumerate(sequence)
-                if base in "ACGT"
-            ),
-            None
-        )
+        start_position = get_first_valid_position(sequence)
 
         if start_position is None:
             all_results[chunk_path.name] = {
@@ -144,7 +181,6 @@ def analyze_all_chunks(chunk_directory, sample_length=5000):
             }
             continue
 
-        # Analyze a sample from the first valid DNA region
         sample = sequence[
             start_position:
             start_position + sample_length
@@ -161,6 +197,8 @@ def analyze_all_chunks(chunk_directory, sample_length=5000):
         }
 
     return all_results
+
+
 def score_candidate_pam(
     chunk_path,
     candidate_position,
@@ -168,28 +206,24 @@ def score_candidate_pam(
     max_distance=50
 ):
     """
-    Score the PAM proximity for an off-target candidate.
+    Calculate PAM-proximity score for an off-target candidate.
+
+    The function examines the region around the candidate
+    position and searches for nearby NGG PAM sites.
 
     Parameters:
-        chunk_path: Path to the .npy chunk file.
-        candidate_position: Position within the chunk.
-        sample_length: Number of bases to analyze.
-        max_distance: Maximum PAM distance used for scoring.
+        chunk_path: Path to .npy genome chunk
+        candidate_position: Candidate/off-target position
+        sample_length: Number of bases to analyze
+        max_distance: Maximum PAM distance considered
 
     Returns:
-        Dictionary containing PAM proximity scoring results.
+        PAM scoring dictionary.
     """
 
     sequence = load_chunk_as_sequence(chunk_path)
 
-    start_position = next(
-        (
-            i
-            for i, base in enumerate(sequence)
-            if base in "ACGT"
-        ),
-        None
-    )
+    start_position = get_first_valid_position(sequence)
 
     if start_position is None:
         return {
@@ -201,9 +235,12 @@ def score_candidate_pam(
             "risk": "Low"
         }
 
-    # Take a sample beginning from the candidate position.
-    # This avoids always analyzing only the first 5,000 valid bases.
-    sample_start = max(start_position, candidate_position - max_distance)
+    # Analyze a region around the candidate position
+    sample_start = max(
+        start_position,
+        candidate_position - max_distance
+    )
+
     sample_end = min(
         len(sequence),
         max(
@@ -212,7 +249,9 @@ def score_candidate_pam(
         )
     )
 
-    sample = sequence[sample_start:sample_end]
+    sample = sequence[
+        sample_start:sample_end
+    ]
 
     pam_sites = find_pam_sites(
         sample,
@@ -225,9 +264,13 @@ def score_candidate_pam(
         max_distance=max_distance
     )
 
+
 if __name__ == "__main__":
 
-    chunk_path = "data/chunks/chunk_000001.npy"
+    chunk_path = (
+        "data/chunks/chunk_000001.npy"
+    )
+
     candidate_position = 10500
 
     result = score_candidate_pam(
@@ -235,12 +278,43 @@ if __name__ == "__main__":
         candidate_position
     )
 
+    print()
     print("PAM CANDIDATE SCORING")
-    print("-" * 35)
-    print(f"Candidate Position: {candidate_position}")
-    print(f"Nearest PAM       : {result['nearest_pam']}")
-    print(f"PAM Position      : {result['pam_position']}")
-    print(f"Distance          : {result['distance']}")
-    print(f"PAM Score         : {result['score']}")
-    print(f"Normalized Score  : {result['score_normalized']}")
-    print(f"Risk Level        : {result['risk']}")
+    print("-" * 40)
+
+    print(
+        f"Candidate Position: "
+        f"{candidate_position}"
+    )
+
+    print(
+        f"Nearest PAM       : "
+        f"{result['nearest_pam']}"
+    )
+
+    print(
+        f"PAM Position      : "
+        f"{result['pam_position']}"
+    )
+
+    print(
+        f"Distance          : "
+        f"{result['distance']}"
+    )
+
+    print(
+        f"PAM Score         : "
+        f"{result['score']}"
+    )
+
+    print(
+        f"Normalized Score  : "
+        f"{result['score_normalized']}"
+    )
+
+    print(
+        f"Risk Level        : "
+        f"{result['risk']}"
+    )
+
+    print()
